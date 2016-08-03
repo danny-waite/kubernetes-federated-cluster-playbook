@@ -1,0 +1,9 @@
+---
+
+- name: add cluster kubeconfig for {{ item }}
+  command: >
+    kubectl --namespace=federation create secret generic {{ item }}
+    --from-file=generated/kubeconfigs/{{ item }}/kubeconfig
+
+- name: run creater cluster manifest for {{ item }}
+  command: kubectl --context=federation-cluster apply -f generated/clusters/{{ item }}.yaml

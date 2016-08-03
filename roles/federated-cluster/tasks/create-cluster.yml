@@ -1,0 +1,28 @@
+---
+
+- name: check current cluster_nodes
+  command: >
+    {{ gcloud }}
+    container clusters describe {{ CLUSTER_PREFIX }}-{{ item }}
+    --zone {{ item }}
+  register: cluster_check
+  ignore_errors: yes
+  failed_when: false
+
+- debug: var=cluster_check
+
+- name: create container cluster
+  command: >
+    {{ gcloud }}
+    container clusters create {{ CLUSTER_PREFIX }}-{{ item }}
+    --zone {{ item }}
+    --num-nodes={{ CLUSTER_NODE_COUNT }}
+    --machine-type={{ MACHINE_TYPE }}
+    --enable-autoscaling --min-nodes {{ MIN_NODE_COUNT }} --max-nodes {{ MAX_NODE_COUNT }}
+    --enable-cloud-logging
+    --enable-cloud-monitoring
+    --scopes cloud-platform
+  register: cluster_create
+  when: cluster_check | failed
+
+- debug: var=cluster_create

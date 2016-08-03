@@ -1,0 +1,186 @@
+---
+
+- name: set facts
+  set_fact:
+    gcloud: 'gcloud --format json --project {{ GOOGLE_CLOUD_PROJECT }}'
+    FEDERATION_APISERVER_SECRET_FILE: /tmp/token_file
+
+- name: create directories
+  file:
+    path: '{{ item }}'
+    state: directory
+  with_items:
+    - generated/manifests
+    - generated/secrets
+    - generated/kubeconfigs
+    - generated/kubeconfigs/federation-apiserver
+
+- name: set the gcloud account
+  command: gcloud config set account {{ GOOGLE_CLOUD_ACCOUNT }}
+
+- name: create cluster {{ item }}
+  include: create-cluster.yml
+  with_items: '{{ ZONES }}'
+
+- name: get created clusters
+  command: '{{ gcloud }} container clusters list --filter="name:{{ CLUSTER_PREFIX }}*"'
+  register: created_clusters
+
+- set_fact:
+    cluster_name_list: "{{ created_clusters.stdout | from_json | map(attribute='name') | list }}"
+    cluster_zone_list: "{{ created_clusters.stdout | from_json | map(attribute='zone') | list }}"
+    cluster_endpoint_list: "{{ created_clusters.stdout | from_json | map(attribute='endpoint') | list }}"
+
+- name: store credentials for all clusters
+  command: '{{ gcloud }} container clusters get-credentials {{ item.0 }} --zone={{ item.1 }}'
+  with_together:
+    - '{{ cluster_name_list }}'
+    - '{{ cluster_zone_list }}'
+    - '{{ cluster_endpoint_list }}'
+
+- template:
+    src: templates/manifests/cluster.yaml
+    dest: generated/manifests/{{ item.0 }}-cluster.yaml
+  with_together:
+    - '{{ cluster_name_list }}'
+    - '{{ cluster_zone_list }}'
+    - '{{ cluster_endpoint_list }}'
+
+- include: create-cluster-config.yml
+  with_together:
+    - '{{ cluster_name_list }}'
+    - '{{ cluster_zone_list }}'
+
+- name: check DNS zone
+  command: gcloud dns managed-zones describe {{DNS_ZONE_NAME}}
+  register: dns_check
+  ignore_errors: yes
+  failed_when: false
+
+- name: create DNS zone
+  command: >
+    gcloud dns managed-zones create {{DNS_ZONE_NAME}}
+    --description "kubernetes federation domain"
+    --dns-name {{ DNS_NAME }}
+  when: dns_check | failed
+
+- name: set host cluster context name
+  set_fact:
+    FEDERATION_HOST_CLUSTER_CONTEXT: gke_{{ GOOGLE_CLOUD_PROJECT }}_{{ cluster_zone_list[0] }}_{{ cluster_name_list[0] }}
+
+# - name: set the FEDERATION_HOST_CLUSTER_CONTEXT environment variable
+#   shell: export FEDERATION_HOST_CLUSTER_CONTEXT={{ FEDERATION_HOST_CLUSTER_CONTEXT }}
+
+- name: set current context to host cluster context
+  command: kubectl config use-context {{ FEDERATION_HOST_CLUSTER_CONTEXT }}
+
+- name: create federation namespace manifest
+  template:
+    src: templates/manifests/federation-namespace.yaml
+    dest: generated/manifests/federation-namespace.yaml
+
+- name: run federation namespace manifest
+  command: kubectl apply -f generated/manifests/federation-namespace.yaml
+
+- name: create federation-apiserver service manifest
+  template:
+    src: templates/manifests/federation-apiserver-lb-service.yaml
+    dest: generated/manifests/federation-apiserver-lb-service.yaml
+
+- name: run federation-apiserver service manifest
+  command: kubectl apply -f generated/manifests/federation-apiserver-lb-service.yaml
+
+- name: wait for federation-apiserver service ip
+  action: shell kubectl get svc --namespace={{FEDERATION_NAMESPACE}} {{FEDERATION_APISERVER_DEPLOYMENT_NAME}} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: federation_apiserver_service_result
+  until: federation_apiserver_service_result.rc == 0
+  retries: 10
+  delay: 10
+
+- debug: var=federation_apiserver_service_result.stdout
+
+- name: set FEDERATION_API_HOST facts
+  set_fact:
+    FEDERATION_API_HOST: '{{ federation_apiserver_service_result.stdout }}'
+
+- name: create token
+  set_fact:
+    federation_apiserver_secret: "{{ lookup('password', FEDERATION_APISERVER_SECRET_FILE + ' length=15') }}"
+
+- name: create known-tokens.csv
+  template:
+    src: templates/secrets/known-tokens.csv
+    dest: generated/secrets/known-tokens.csv
+
+# TODO: need to check if secret was already created, if not skip (remove ignore_errors: yes)
+- name: add known-tokens secret
+  command: >
+    kubectl --namespace={{FEDERATION_NAMESPACE}}
+    create secret generic federation-apiserver-secrets
+    --from-file=generated/secrets/known-tokens.csv
+  ignore_errors: yes
+
+- name: create federation-etcd-pvc manifest
+  template:
+    src: templates/manifests/federation-etcd-pvc.yaml
+    dest: generated/federation-etcd-pvc.yaml
+
+- name: run federation-etcd-pvc manifest
+  command: kubectl apply -f generated/federation-etcd-pvc.yaml
+
+- name: create federation-api deployment manifest
+  template:
+    src: templates/manifests/federation-apiserver-deployment.yaml
+    dest: generated/manifests/federation-apiserver-deployment.yaml
+
+- name: run federation-api deployment manifest
+  command: kubectl apply -f generated/manifests/federation-apiserver-deployment.yaml
+
+- name: set current cluster
+  command: >
+    kubectl config set-cluster federation-cluster
+    --server=https://{{ FEDERATION_API_HOST }}
+    --insecure-skip-tls-verify=true
+
+- name: set cluster credentials
+  command: >
+    kubectl config set-credentials federation-cluster
+    --token={{ federation_apiserver_secret }}
+
+- name: set federation cluster context
+  command: >
+    kubectl config set-context federation-cluster
+    --cluster=federation-cluster
+    --user=federation-cluster
+
+- name: switch to federation context
+  command: kubectl config use-context federation-cluster
+
+- name: create federation kubeconfig
+  shell: kubectl config view --flatten --minify > generated/kubeconfigs/federation-apiserver/kubeconfig
+
+- name: set current context to host cluster context
+  command: kubectl config use-context {{ FEDERATION_HOST_CLUSTER_CONTEXT }}
+
+# TODO: need to check if secret was already created, if not skip (remove ignore_errors: yes)
+- name: create federation-apiserver-secret
+  command: >
+    kubectl --namespace={{FEDERATION_NAMESPACE}}
+    create secret generic federation-apiserver-secret
+    --from-file=generated/kubeconfigs/federation-apiserver/kubeconfig
+  ignore_errors: yes
+
+- name: create federation-controller-manager deployment manifest
+  template:
+    src: templates/manifests/federation-controller-manager-deployment.yaml
+    dest: generated/manifests/federation-controller-manager-deployment.yaml
+
+- name: run federation-controller-manager manifest
+  command: kubectl apply -f generated/manifests/federation-controller-manager-deployment.yaml
+
+- name: switch context
+  command: kubectl config use-context federation-cluster
+
+- include: add-cluster.yml
+  with_items:
+    - '{{ cluster_name_list }}'

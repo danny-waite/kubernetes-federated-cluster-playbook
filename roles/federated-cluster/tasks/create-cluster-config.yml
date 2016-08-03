@@ -1,0 +1,13 @@
+---
+
+# strongly dislike this, however wasn't obvious how to export a kubconfig without switching context first
+- name: set current context
+  shell: kubectl config use-context gke_{{ GOOGLE_CLOUD_PROJECT }}_{{ item.1 }}_{{ item.0 }}
+
+- name: create kubeconfig directory
+  file:
+    path: generated/kubeconfigs/{{ item.0 }}
+    state: directory
+
+- name: export config
+  shell: kubectl config view --flatten --minify > generated/kubeconfigs/{{ item.0 }}/kubeconfig
