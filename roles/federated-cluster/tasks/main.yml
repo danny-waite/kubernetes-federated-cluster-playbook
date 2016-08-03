@@ -178,9 +178,6 @@
 - name: run federation-controller-manager manifest
   command: kubectl apply -f generated/manifests/federation-controller-manager-deployment.yaml
 
-- name: switch context
-  command: kubectl config use-context federation-cluster
-
 - include: add-cluster.yml
   with_items:
     - '{{ cluster_name_list }}'

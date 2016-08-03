@@ -30,7 +30,7 @@ spec:
         - --dns-provider={{FEDERATION_DNS_PROVIDER}}
         # - --dns-provider-config={{FEDERATION_DNS_PROVIDER_CONFIG}}
         - --federation-name={{FEDERATION_NAME}}
-        - --zone-name={{DNS_ZONE_NAME}}
+        - --zone-name={{DNS_NAME}}
         ports:
         - containerPort: 443
           name: https

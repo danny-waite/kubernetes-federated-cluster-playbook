@@ -7,7 +7,7 @@
     - role: federated-cluster
       GOOGLE_CLOUD_ACCOUNT: some_google_cloud_account@gmail.com
       GOOGLE_CLOUD_PROJECT: dev
-      DNS_NAME: test-federation.com
+      DNS_NAME: test-federation.com.
       MACHINE_TYPE: g1-small
       CLUSTER_PREFIX: dev
       CLUSTER_NODE_COUNT: 1

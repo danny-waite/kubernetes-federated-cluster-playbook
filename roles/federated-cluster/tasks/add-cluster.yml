@@ -6,4 +6,4 @@
     --from-file=generated/kubeconfigs/{{ item }}/kubeconfig
 
 - name: run creater cluster manifest for {{ item }}
-  command: kubectl --context=federation-cluster apply -f generated/clusters/{{ item }}.yaml
+  command: kubectl --context=federation-cluster apply -f generated/manifests/{{ item }}-cluster.yaml
