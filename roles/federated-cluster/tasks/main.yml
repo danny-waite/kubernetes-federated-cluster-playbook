@@ -123,10 +123,10 @@
 - name: create federation-etcd-pvc manifest
   template:
     src: templates/manifests/federation-etcd-pvc.yaml
-    dest: generated/federation-etcd-pvc.yaml
+    dest: generated/manifests/federation-etcd-pvc.yaml
 
 - name: run federation-etcd-pvc manifest
-  command: kubectl apply -f generated/federation-etcd-pvc.yaml
+  command: kubectl apply -f generated/manifests/federation-etcd-pvc.yaml
 
 - name: create federation-api deployment manifest
   template:

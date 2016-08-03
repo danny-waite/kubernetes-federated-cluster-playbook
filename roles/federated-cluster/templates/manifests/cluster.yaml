@@ -5,6 +5,6 @@ metadata:
 spec:
   serverAddressByClientCIDRs:
     - clientCIDR: "0.0.0.0/0"
-      serverAddress: "{{ item.2 }}"
+      serverAddress: "https://{{ item.2 }}"
   secretRef:
     name: {{ item.0 }}
