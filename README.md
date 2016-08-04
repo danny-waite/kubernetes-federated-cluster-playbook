@@ -4,8 +4,6 @@ The following is an attempt to automate the creation of a federated Kubernetes c
 
 Manifests are taken from http://kubernetes.io/docs/admin/federation/ with much reference to Kelsey Hightower's guide at https://github.com/kelseyhightower/kubernetes-cluster-federation
 
-> NOTE: this is currently work in progress
-
 ## Requirements
 
 - Ansible 2.1+
@@ -13,7 +11,7 @@ Manifests are taken from http://kubernetes.io/docs/admin/federation/ with much r
 - Google Cloud account
 - Google Cloud Project created
 - Google Cloud DNS enabled
-- Kubernetes CLI tools
+- Kubernetes CLI tools (`kubectl` version 1.3+)
 
 ## Running the Playbook
 
@@ -50,8 +48,22 @@ kubectl --context="<cluster_name>" \
 
 - Note the `DNS_NAME` should be a real DNS name and the dot at the end is important. However, it does not need to be resolvable to get the Federated Cluster to come up.
 
-- This is an early attempt at automating a Federated Cluster and since there is ongoing work to improve the current method, this playbook may need to change significantly in the future, I will however attempt to keep improve it while it is still useful.
+- If everything is working as it should, you should see A records created in the specified DNS zone:
+
+`gcloud dns record-sets list -z federation`
+
+- Cleanup can be done with the following:
+```
+kubectl --context=federation-cluster delete services nginx
+kubectl --namespace=federation delete pods,svc,rc,deployment,secret --all
+gcloud dns managed-zones delete federation
+
+# and for each cluster
+gcloud container clusters delete <cluster_name> --zone=<cluster_zone>
+```
+
+- This is an early attempt at automating a Federated Cluster and since there is ongoing work to improve the current method, this playbook may need to change significantly in the future, I will however attempt to keep improving it while it is still useful.
 
 - Pull Requests welcome
 
-- Thanks to madhusudancs@google.com for provided valuable assistance getting this working, who is also happy to assist with Kubernetes Cluster Federation related topics.
+- Thanks to madhusudancs@google.com for providing valuable assistance getting this working, who is also happy to assist with Kubernetes Cluster Federation related topics.
